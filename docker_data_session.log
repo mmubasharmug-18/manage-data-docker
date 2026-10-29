@@ -1,0 +1,277 @@
+Docker data practice session, 2026-10-29 14:15:24
+
+########## Setup
+
+=== 1. Docker version
+$ docker --version
+Docker version 29.9.2, build a82e528
+-> ok
+
+=== 2. Is the engine running?
+$ docker info --format "server {{.ServerVersion}} on {{.OperatingSystem}}"
+server 29.9.2 on Docker Desktop
+-> ok
+
+=== 3. Remove leftover containers from an earlier run
+$ docker rm -f data-demo data-holder
+-> ok
+
+=== 4. Remove leftover volumes from an earlier run
+$ docker volume rm -f vitals-data vitals-restore
+vitals-data
+vitals-restore
+-> ok
+
+=== 5. Remove leftover folders from an earlier run
+cleared D:\Brackets\Daily Tasks\10. October\29 Oct\host_data
+cleared D:\Brackets\Daily Tasks\10. October\29 Oct\backups
+-> ok
+
+=== 6. Build the image
+$ docker build -t vitals-logger .
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 314B 0.0s done
+#1 DONE 0.1s
+
+... (35 more lines)
+-> ok
+
+########## Part A: no volume. Data lives inside the container
+
+=== 7. Save one reading
+$ docker run --rm vitals-logger P-001 120 80 72
+Saved reading for P-001
+File: /data/readings.csv
+Readings in file: 1
+-> ok
+
+=== 8. Run it again. The first reading is already gone
+$ docker run --rm vitals-logger P-001 120 80 72
+Saved reading for P-001
+File: /data/readings.csv
+Readings in file: 1
+-> ok
+
+=== 9. Same thing, but keep the container this time
+$ docker run --name data-demo vitals-logger P-001 120 80 72
+Saved reading for P-001
+File: /data/readings.csv
+Readings in file: 1
+-> ok
+
+=== 10. Start that same container again. Its data is still inside it
+$ docker start -a data-demo
+Saved reading for P-001
+File: /data/readings.csv
+Readings in file: 2
+-> ok
+
+=== 11. Remove the container
+$ docker rm data-demo
+data-demo
+-> ok
+
+=== 12. New container with the same name. The data is gone
+$ docker run --name data-demo vitals-logger P-001 120 80 72
+Saved reading for P-001
+File: /data/readings.csv
+Readings in file: 1
+-> ok
+
+=== 13. Remove it again
+$ docker rm data-demo
+data-demo
+-> ok
+
+########## Part B: named volume. Data lives outside the container
+
+=== 14. Create a volume
+$ docker volume create vitals-data
+vitals-data
+-> ok
+
+=== 15. List volumes
+$ docker volume ls --filter name=vitals-data
+DRIVER    VOLUME NAME
+local     vitals-data
+-> ok
+
+=== 16. Save a reading into the volume
+$ docker run --rm -v vitals-data:/data vitals-logger P-001 120 80 72
+Saved reading for P-001
+File: /data/readings.csv
+Readings in file: 1
+-> ok
+
+=== 17. Another container, same volume. The count goes up
+$ docker run --rm -v vitals-data:/data vitals-logger P-002 135 88 76
+Saved reading for P-002
+File: /data/readings.csv
+Readings in file: 2
+-> ok
+
+=== 18. And again
+$ docker run --rm -v vitals-data:/data vitals-logger P-003 110 70 64
+Saved reading for P-003
+File: /data/readings.csv
+Readings in file: 3
+-> ok
+
+=== 19. Every container above is already deleted. The data is still here
+$ docker run --rm -v vitals-data:/data vitals-logger P-001 118 76 70
+Saved reading for P-001
+File: /data/readings.csv
+Readings in file: 4
+-> ok
+
+=== 20. Inspect the volume
+$ docker volume inspect vitals-data --format "{{.Name}} | driver {{.Driver}} | {{.Mountpoint}}"
+vitals-data | driver local | /var/lib/docker/volumes/vitals-data/_data
+-> ok
+
+=== 21. A different image (Alpine) reads the same volume
+$ docker run --rm -v vitals-data:/data alpine cat /data/readings.csv
+recorded_at,patient_id,systolic,diastolic,heart_rate
+2026-10-29T09:15:36+00:00,P-001,120,80,72
+2026-10-29T09:15:38+00:00,P-002,135,88,76
+2026-10-29T09:15:39+00:00,P-003,110,70,64
+2026-10-29T09:15:40+00:00,P-001,118,76,70
+-> ok
+
+=== 22. Same volume with the --mount syntax
+$ docker run --rm --mount type=volume,source=vitals-data,target=/data vitals-logger --show
+File: /data/readings.csv
+  2026-10-29T09:15:36+00:00  P-001  BP 120/80  HR 72
+  2026-10-29T09:15:38+00:00  P-002  BP 135/88  HR 76
+  2026-10-29T09:15:39+00:00  P-003  BP 110/70  HR 64
+  2026-10-29T09:15:40+00:00  P-001  BP 118/76  HR 70
+Readings in file: 4
+-> ok
+
+########## Part C: bind mount. A folder on my own computer
+
+=== 23. Make an empty folder on my computer
+D:\Brackets\Daily Tasks\10. October\29 Oct\host_data
+-> ok
+
+=== 24. Save a reading into that folder
+$ docker run --rm -v "D:\Brackets\Daily Tasks\10. October\29 Oct\host_data:/data" vitals-logger P-010 130 85 70
+Saved reading for P-010
+File: /data/readings.csv
+Readings in file: 1
+-> ok
+
+=== 25. Look at the file from my side, without Docker
+recorded_at,patient_id,systolic,diastolic,heart_rate
+2026-10-29T09:15:44+00:00,P-010,130,85,70
+-> ok, the file is really on my computer
+
+=== 26. Edit the file from my side: add a reading by hand
+added P-011 to host_data/readings.csv
+-> ok
+
+=== 27. The container sees my change straight away
+$ docker run --rm -v "D:\Brackets\Daily Tasks\10. October\29 Oct\host_data:/data" vitals-logger --show
+File: /data/readings.csv
+  2026-10-29T09:15:44+00:00  P-010  BP 130/85  HR 70
+  2026-01-01T00:00:00+00:00  P-011  BP 118/76  HR 66
+Readings in file: 2
+-> ok
+
+=== 28. Mount the folder read-only. Saving must fail
+$ docker run --rm -v "D:\Brackets\Daily Tasks\10. October\29 Oct\host_data:/data:ro" vitals-logger P-012 125 82 68
+Problem with /data: Read-only file system
+-> failed, and that is what should happen (exit code 1)
+
+=== 29. Read-only is still fine for reading
+$ docker run --rm -v "D:\Brackets\Daily Tasks\10. October\29 Oct\host_data:/data:ro" vitals-logger --show
+File: /data/readings.csv
+  2026-10-29T09:15:44+00:00  P-010  BP 130/85  HR 70
+  2026-01-01T00:00:00+00:00  P-011  BP 118/76  HR 66
+Readings in file: 2
+-> ok
+
+########## Part D: tmpfs. Memory only, nothing is kept
+
+=== 30. Save a reading into a tmpfs mount (mode=1777 so the normal user can write)
+$ docker run --rm --tmpfs /data:mode=1777 vitals-logger P-001 120 80 72
+Saved reading for P-001
+File: /data/readings.csv
+Readings in file: 1
+-> ok
+
+########## Part E: back up and restore a volume
+
+=== 31. Make a folder for backups
+D:\Brackets\Daily Tasks\10. October\29 Oct\backups
+-> ok
+
+=== 32. Pack the volume into a .tgz file (volume mounted read-only)
+$ docker run --rm -v vitals-data:/data:ro -v "D:\Brackets\Daily Tasks\10. October\29 Oct\backups:/backup" alpine tar czf /backup/vitals-data.tgz -C /data .
+-> ok
+
+=== 33. The backup file on my computer
+vitals-data.tgz, 245 bytes
+-> ok
+
+=== 34. Create a new empty volume
+$ docker volume create vitals-restore
+vitals-restore
+-> ok
+
+=== 35. Unpack the backup into it
+$ docker run --rm -v vitals-restore:/data -v "D:\Brackets\Daily Tasks\10. October\29 Oct\backups:/backup:ro" alpine tar xzf /backup/vitals-data.tgz -C /data
+-> ok
+
+=== 36. The restored volume has the same 4 readings
+$ docker run --rm -v vitals-restore:/data vitals-logger --show
+File: /data/readings.csv
+  2026-10-29T09:15:36+00:00  P-001  BP 120/80  HR 72
+  2026-10-29T09:15:38+00:00  P-002  BP 135/88  HR 76
+  2026-10-29T09:15:39+00:00  P-003  BP 110/70  HR 64
+  2026-10-29T09:15:40+00:00  P-001  BP 118/76  HR 70
+Readings in file: 4
+-> ok
+
+########## Part F: housekeeping
+
+=== 37. Start a container that keeps using the volume
+$ docker run -d --name data-holder -v vitals-data:/data alpine sleep 300
+545f81c3ab735bf70dd5f0ed99916fbad3dca496a513cc6c7a35926d91fd1247
+-> ok
+
+=== 38. Removing a volume that is in use must fail
+$ docker volume rm vitals-data
+Error response from daemon: remove vitals-data: volume is in use - [545f81c3ab735bf70dd5f0ed99916fbad3dca496a513cc6c7a35926d91fd1247]
+-> failed, and that is what should happen (exit code 1)
+
+=== 39. Remove that container
+$ docker rm -f data-holder
+data-holder
+-> ok
+
+=== 40. Now the volumes can be removed
+$ docker volume rm vitals-data vitals-restore
+vitals-data
+vitals-restore
+-> ok
+
+=== 41. Check they are gone
+$ docker volume ls --filter name=vitals-data
+DRIVER    VOLUME NAME
+-> ok
+
+=== 42. Disk space used by Docker
+$ docker system df
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          7         3         375.7MB   141.1MB (37%)
+Containers      4         0         16.38kB   16.38kB (100%)
+Local Volumes   0         0         0B        0B
+Build Cache     23        0         234.8MB   229.4kB
+-> ok
+
+Done: 42 of 42 steps worked.
+The folders host_data and backups are still here, so you can look at the files. Delete them when you are done.
+Full output saved in D:\Brackets\Daily Tasks\10. October\29 Oct\docker_data_session.log
