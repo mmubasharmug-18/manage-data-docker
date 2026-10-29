@@ -219,24 +219,29 @@ python -m pytest
 
 They check the CSV is created once with one header, counts go up, bad values are refused, a row added by hand is picked up, and an unusable folder gives exit code 1.
 
-## 9. My results
-
-*(Fill in after running.)*
+## My results
 
 - What happened to the data in Part A when the container was removed, and when it was only stopped and started?
+  When I stopped and started the same container (`docker start -a data-demo`), the data was still there and the count went to 2. After `docker rm data-demo`, a new container started with 1 again. The data is lost when the container is removed.
+
 - What count did the reading show in each of the three volume runs, and why did it keep going up?
+  The counts were 1, 2 and 3, and a fourth run after that gave 4. Each run used a new container that was deleted afterwards, but all of them mounted the same volume `vitals-data`, so the file stayed.
+
 - What did I see on my computer after the bind mount run? What happened when I edited the file?
+  A file `host_data\readings.csv` appeared on my computer with the reading P-010. I added P-011 by hand, and the next container showed both readings (count 2), so it sees my changes straight away.
+
 - What happened when I mounted the folder with `:ro`?
+  Saving failed with `Problem with /data: Read-only file system` and exit code 1. Showing the readings still worked.
+
 - How did I back up and restore the volume? How many readings did the restored volume have?
+  I packed the volume into `backups\vitals-data.tgz` (243 bytes) with a small Alpine container and `tar`. Then I unpacked it into a new volume `vitals-restore`. The restored volume had the same 4 readings.
+
 - What happened when I removed a volume that was in use?
+  Docker refused: `volume is in use`. After I removed the container that was using it, `docker volume rm` worked.
 
-## What to submit
+- Extra: the tmpfs mount first gave `Permission denied`, because a tmpfs folder is owned by root and my script runs as a normal user. Adding `:mode=1777` fixed it.
 
-- The project folder (or a GitHub link).
-- `docker_data_session.log`, or screenshots of the volume runs, the bind mount, the `:ro` failure and the backup.
-- This README with the results filled in.
-
-## Takeaways
+## Conclusion
 
 - Container data is temporary. Volumes and bind mounts keep it.
 - Volumes are managed by Docker and best for app data. Bind mounts point at my own folders and best for development.
